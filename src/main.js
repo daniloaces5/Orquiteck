@@ -1,83 +1,186 @@
-// --- CHAT LOGIC ---
-const chatBody = document.getElementById('chat-body');
+// =====================
+// CONFIGURACIÓN — CAMBIA ESTO
+// =====================
+const N8N_WEBHOOK = 'https://noncompressible-bea-immensely.ngrok-free.dev/webhook/orquiteck'; // ← tu URL de webhook
+
+// =====================
+// UTILS
+// =====================
+function getTime() {
+  return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ID único de sesión por visita (para memoria de conversación en n8n)
+const sessionId = crypto.randomUUID();
+
+// Set initial message timestamp
+const initialTime = document.getElementById('initial-time');
+if (initialTime) initialTime.textContent = getTime();
+
+// =====================
+// CHAT LOGIC
+// =====================
+const chatBody  = document.getElementById('chat-body');
 const chatInput = document.getElementById('chat-input');
-const sendBtn = document.getElementById('send-btn');
+const sendBtn   = document.getElementById('send-btn');
 
-const responses = {
-    'default': 'Desculpe, ainda estou aprendendo! Mas posso te ajudar a agendar uma consulta ou tirar dúvidas sobre tratamentos. O que prefere?',
-    'oi': 'Olá! Como posso ajudar você hoje? Gostaria de marcar uma avaliação ou saber nossos horários?',
-    'ola': 'Olá! Como posso ajudar você hoje? Gostaria de marcar uma avaliação ou saber nossos horários?',
-    'agendar': 'Com certeza! Temos horários disponíveis para amanhã às 14h ou 16h. Algum desses funciona para você?',
-    'limpeza': 'A limpeza profunda é essencial! O valor inicial é de R$ 180. Quer agendar uma agora?',
-    'endereco': 'Estamos localizados na Av. Paulista, 1000, Sala 502. Próximo ao metrô!',
-    'preco': 'Nossos tratamentos são personalizados. Uma limpeza começa em R$ 180, e clareamento a partir de R$ 450. Vamos marcar uma avaliação gratuita?',
-    'dentista': 'Temos especialistas em Estomatologia, Ortodontia e Implantes. Qual sua necessidade hoje?'
-};
+// Llama al webhook de n8n y devuelve la respuesta del bot
+async function getBotResponse(userMessage) {
+  const res = await fetch(N8N_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: userMessage,
+      sessionId: sessionId
+    })
+  });
 
-function addMessage(text, isBot = true) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = isBot 
-        ? "bg-[#202c33] text-slate-100 p-3 rounded-lg rounded-tl-none max-w-[85%] text-sm self-start animate-fade-in"
-        : "bg-[#005c4b] text-slate-100 p-3 rounded-lg rounded-tr-none max-w-[85%] text-sm self-end animate-fade-in";
-    
-    msgDiv.textContent = text;
-    chatBody.appendChild(msgDiv);
-    chatBody.scrollTop = chatBody.scrollHeight;
+  if (!res.ok) throw new Error(`Webhook error: ${res.status}`);
+
+  const data = await res.json();
+
+  // n8n devuelve { "reply": "..." } — ajusta la clave si usas otra
+  return data.reply || data.output || data.text || 'Desculpe, não entendi. Pode repetir?';
 }
 
-function handleBotResponse(userText) {
-    const text = userText.toLowerCase();
-    let response = responses['default'];
-
-    if (text.includes('agendar') || text.includes('marcar')) response = responses['agendar'];
-    else if (text.includes('limpeza')) response = responses['limpeza'];
-    else if (text.includes('onde') || text.includes('endereço') || text.includes('local')) response = responses['endereco'];
-    else if (text.includes('quanto') || text.includes('preço') || text.includes('valor')) response = responses['preco'];
-    else if (text.includes('oi') || text.includes('olá')) response = responses['oi'];
-    else if (text.includes('dentista') || text.includes('especialista')) response = responses['dentista'];
-
-    // Simulate typing delay
-    setTimeout(() => {
-        addMessage(response, true);
-    }, 1000);
+// Add user message
+function addUserMessage(text) {
+  const time = getTime();
+  const wrap = document.createElement('div');
+  wrap.className = 'wa-bubble wa-bubble-user';
+  wrap.innerHTML = `
+    <span>${escapeHtml(text)}</span>
+    <span class="wa-time">
+      ${time}
+      <span class="wa-tick">
+        <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor">
+          <path d="M11.071.653a.75.75 0 0 1 .025 1.06L5.304 7.84a.75.75 0 0 1-1.074.012L1.23 4.818a.75.75 0 0 1 1.042-1.08l2.463 2.38 5.276-5.44a.75.75 0 0 1 1.06-.025zM14.571.653a.75.75 0 0 1 .025 1.06L8.804 7.84a.75.75 0 0 1-1.043.014.75.75 0 0 1 .013-1.074l5.736-5.902a.75.75 0 0 1 1.061-.225z"/>
+        </svg>
+      </span>
+    </span>
+  `;
+  chatBody.appendChild(wrap);
+  scrollBottom();
 }
 
-function sendMessage() {
-    const text = chatInput.value.trim();
-    if (text === '') return;
+// Show typing indicator
+function showTyping() {
+  const el = document.createElement('div');
+  el.className = 'wa-typing wa-bubble';
+  el.id = 'typing-indicator';
+  el.innerHTML = `<div class="typing-dots"><span></span><span></span><span></span></div>`;
+  chatBody.appendChild(el);
+  scrollBottom();
+}
 
-    addMessage(text, false);
-    chatInput.value = '';
-    handleBotResponse(text);
+// Add bot message
+function addBotMessage(text) {
+  const typing = document.getElementById('typing-indicator');
+  if (typing) typing.remove();
+
+  const time = getTime();
+  const wrap = document.createElement('div');
+  wrap.className = 'wa-bubble wa-bubble-bot';
+  wrap.innerHTML = `<span>${escapeHtml(text)}</span><span class="wa-time">${time}</span>`;
+  chatBody.appendChild(wrap);
+  scrollBottom();
+}
+
+function scrollBottom() {
+  chatBody.scrollTop = chatBody.scrollHeight;
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+let botBusy = false;
+
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text || botBusy) return;
+
+  botBusy = true;
+  addUserMessage(text);
+  chatInput.value = '';
+  showTyping();
+
+  try {
+    const reply = await getBotResponse(text);
+    addBotMessage(reply);
+  } catch (err) {
+    addBotMessage('Desculpe, tive um problema técnico. Tente novamente em instantes. 🙏');
+    console.error('[OrquiBot]', err);
+  } finally {
+    botBusy = false;
+  }
 }
 
 sendBtn.addEventListener('click', sendMessage);
-chatInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage();
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
 });
 
-// --- SCROLL REVEAL ---
-const revealElements = document.querySelectorAll('[data-reveal]');
+// Suggestion chips
+window.insertSuggestion = function(text) {
+  chatInput.value = text;
+  chatInput.focus();
+  sendMessage();
+};
 
+// =====================
+// SCROLL REVEAL
+// =====================
 const revealObserver = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-        if (entry.isIntersecting) {
-            entry.target.classList.add('active');
-        }
-    });
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('active');
+      revealObserver.unobserve(entry.target);
+    }
+  });
 }, { threshold: 0.1 });
 
-revealElements.forEach(el => revealObserver.observe(el));
+document.querySelectorAll('[data-reveal]').forEach(el => revealObserver.observe(el));
 
-// --- NAVBAR EFFECT ---
+// =====================
+// NAVBAR SCROLL EFFECT
+// =====================
 const navbar = document.getElementById('navbar');
 
 window.addEventListener('scroll', () => {
-    if (window.scrollY > 50) {
-        navbar.classList.add('bg-dark-bg/80', 'backdrop-blur-md', 'py-4', 'border-b', 'border-white/5');
-        navbar.classList.remove('py-6');
-    } else {
-        navbar.classList.remove('bg-dark-bg/80', 'backdrop-blur-md', 'py-4', 'border-b', 'border-white/5');
-        navbar.classList.add('py-6');
-    }
+  if (window.scrollY > 50) {
+    navbar.classList.add('bg-dark-bg/80', 'backdrop-blur-md', 'py-4', 'border-b', 'border-white/5');
+    navbar.classList.remove('py-6');
+  } else {
+    navbar.classList.remove('bg-dark-bg/80', 'backdrop-blur-md', 'py-4', 'border-b', 'border-white/5');
+    navbar.classList.add('py-6');
+  }
+}, { passive: true });
+
+// =====================
+// MOBILE MENU
+// =====================
+const menuBtn    = document.getElementById('menu-btn');
+const mobileMenu = document.getElementById('mobile-menu');
+
+menuBtn.addEventListener('click', () => {
+  const isOpen = mobileMenu.classList.toggle('open');
+  menuBtn.classList.toggle('open', isOpen);
+  menuBtn.setAttribute('aria-label', isOpen ? 'Fechar menu' : 'Abrir menu');
+});
+
+window.closeMobileMenu = function() {
+  mobileMenu.classList.remove('open');
+  menuBtn.classList.remove('open');
+};
+
+document.addEventListener('click', (e) => {
+  if (!navbar.contains(e.target)) closeMobileMenu();
 });
