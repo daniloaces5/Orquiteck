@@ -1,4 +1,10 @@
 // =====================
+// VERCEL SPEED INSIGHTS
+// =====================
+import { injectSpeedInsights } from '@vercel/speed-insights';
+injectSpeedInsights();
+
+// =====================
 // CONFIGURACIÓN — CAMBIA ESTO
 // =====================
 const N8N_WEBHOOK = 'https://noncompressible-bea-immensely.ngrok-free.dev/webhook/orquiteck'; // ← tu URL de webhook
